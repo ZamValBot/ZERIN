@@ -1,9 +1,35 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
 const pino = require('pino')
-const qrcode = require('qrcode-terminal')
+const QRCode = require('qrcode')
+const express = require('express')
 const config = require('./config')
 const { cargarComandos } = require('./lib/loader')
 
+const app = express()
+let qrActual = null
+let estado = "Iniciando ZERIN..."
+
+app.get('/', async (req, res) => {
+    if (!qrActual) {
+        return res.send(`<h1>ZERIN BOT - ${estado}</h1><p>Si ya está conectado, ignora esto.</p><script>setTimeout(()=>location.reload(),3000)</script>`)
+    }
+    const qrImage = await QRCode.toDataURL(qrActual)
+    res.send(`
+    <body style="background:#111;color:white;font-family:sans-serif;text-align:center;padding:20px">
+      <h1>⚡ ZERIN BOT - ESCANEA EL QR ⚡</h1>
+      <p>${estado}</p>
+      <img src="${qrImage}" style="width:300px;background:white;padding:10px;border-radius:10px"/>
+      <p>Abre WhatsApp > Dispositivos vinculados > Vincular</p>
+      <p>Se actualiza solo cada 5 seg</p>
+      <script>setTimeout(()=>location.reload(),5000)</script>
+    </body>
+    `)
+})
+
+const PORT = process.env.PORT || 10000
+app.listen(PORT, () => console.log(`Web QR en puerto ${PORT}`))
+
+// --- BOT ---
 let comandos = cargarComandos()
 
 async function startZerin() {
@@ -19,14 +45,18 @@ async function startZerin() {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update
         if (qr) {
-            console.log("QR ZERIN:")
-            qrcode.generate(qr, { small: true })
+            qrActual = qr
+            estado = "Escanea el QR"
+            console.log("Nuevo QR generado - miralo en la web")
         }
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
             if (shouldReconnect) startZerin()
+            else { qrActual = null; estado = "Desconectado" }
         } else if (connection === 'open') {
-            console.log(`✅ ${config.botName} CONECTADO`)
+            qrActual = null
+            estado = `✅ CONECTADO COMO ${config.botName}`
+            console.log(estado)
         }
     })
 
@@ -34,11 +64,9 @@ async function startZerin() {
         try {
             const m = messages[0]
             if (!m.message || m.key.fromMe) return
-            
             const jid = m.key.remoteJid
             const texto = m.message.conversation || m.message.extendedTextMessage?.text || ""
             if (!texto.startsWith(config.prefix)) return
-
             const args = texto.slice(config.prefix.length).trim().split(/ +/)
             const cmd = args.shift().toLowerCase()
 
@@ -47,32 +75,24 @@ async function startZerin() {
               if(comandos[t] && comandos[t][cmd]){ tipoComando=t; comandoFile=comandos[t][cmd]; break }
             }
             if(!comandoFile) return
-
             const sender = m.key.participant || m.key.remoteJid
 
-            // PROTECCION - YA SIN ERROR DE AWAIT
             if(tipoComando === "OWNER" && !config.owners.includes(sender)) {
-                await sock.sendMessage(jid, { text: `❌ Solo owners de ${config.botName} pueden usar .${cmd}\n\n${config.watermark}` }, { quoted: m })
+                await sock.sendMessage(jid, { text: `❌ Solo owners de ${config.botName}` }, { quoted: m })
                 return
             }
-
             if(tipoComando === "ADMIN" && jid.endsWith('@g.us')) {
                 const groupMeta = await sock.groupMetadata(jid)
-                const participant = groupMeta.participants.find(p=>p.id === sender)
-                const isAdmin = participant?.admin === 'admin' || participant?.admin === 'superadmin'
+                const isAdmin = groupMeta.participants.find(p=>p.id === sender)?.admin
                 const isOwnerBot = config.owners.includes(sender)
                 if(!isAdmin && !isOwnerBot) {
-                    await sock.sendMessage(jid, { text: `❌ Solo admins pueden usar .${cmd}\n\n${config.watermark}` }, { quoted: m })
+                    await sock.sendMessage(jid, { text: `❌ Solo admins` }, { quoted: m })
                     return
                 }
             }
-
             comandos = cargarComandos()
             await comandoFile.run(sock, m, args, comandos)
-
-        } catch(e) {
-            console.log("Error ZERIN:", e)
-        }
+        } catch(e) { console.log(e) }
     })
 }
 
