@@ -1,6 +1,5 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
 const pino = require('pino')
-const QRCode = require('qrcode')
 const express = require('express')
 const config = require('./config')
 const { cargarComandos } = require('./lib/loader')
@@ -9,16 +8,16 @@ const app = express()
 let qrActual = null
 let estado = "Iniciando ZERIN..."
 
-app.get('/', async (req, res) => {
+app.get('/', (req, res) => {
     if (!qrActual) {
-        return res.send(`<h1>ZERIN BOT - ${estado}</h1><p>Si ya está conectado, ignora esto.</p><script>setTimeout(()=>location.reload(),3000)</script>`)
+        return res.send(`<body style="background:#111;color:#fff;font-family:sans-serif;text-align:center;padding:30px"><h1>ZERIN BOT - ${estado}</h1><p>Si ya está conectado, ignora esto.</p><script>setTimeout(()=>location.reload(),3000)</script></body>`)
     }
-    const qrImage = await QRCode.toDataURL(qrActual)
+    const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrActual)}`
     res.send(`
     <body style="background:#111;color:white;font-family:sans-serif;text-align:center;padding:20px">
       <h1>⚡ ZERIN BOT - ESCANEA EL QR ⚡</h1>
       <p>${estado}</p>
-      <img src="${qrImage}" style="width:300px;background:white;padding:10px;border-radius:10px"/>
+      <img src="${qrLink}" style="width:300px;background:white;padding:10px;border-radius:10px"/>
       <p>Abre WhatsApp > Dispositivos vinculados > Vincular</p>
       <p>Se actualiza solo cada 5 seg</p>
       <script>setTimeout(()=>location.reload(),5000)</script>
@@ -50,7 +49,7 @@ async function startZerin() {
             console.log("Nuevo QR generado - miralo en la web")
         }
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode!== DisconnectReason.loggedOut
             if (shouldReconnect) startZerin()
             else { qrActual = null; estado = "Desconectado" }
         } else if (connection === 'open') {
@@ -77,7 +76,7 @@ async function startZerin() {
             if(!comandoFile) return
             const sender = m.key.participant || m.key.remoteJid
 
-            if(tipoComando === "OWNER" && !config.owners.includes(sender)) {
+            if(tipoComando === "OWNER" &&!config.owners.includes(sender)) {
                 await sock.sendMessage(jid, { text: `❌ Solo owners de ${config.botName}` }, { quoted: m })
                 return
             }
@@ -85,7 +84,7 @@ async function startZerin() {
                 const groupMeta = await sock.groupMetadata(jid)
                 const isAdmin = groupMeta.participants.find(p=>p.id === sender)?.admin
                 const isOwnerBot = config.owners.includes(sender)
-                if(!isAdmin && !isOwnerBot) {
+                if(!isAdmin &&!isOwnerBot) {
                     await sock.sendMessage(jid, { text: `❌ Solo admins` }, { quoted: m })
                     return
                 }
