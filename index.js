@@ -20,7 +20,7 @@ app.get('/', (req, res) => {
       <img src="${qrLink}" style="width:300px;background:white;padding:10px;border-radius:10px"/>
       <p>Abre WhatsApp > Dispositivos vinculados > Vincular</p>
       <p>Se actualiza solo cada 40 seg</p>
-      <script>setTimeout(()=>location.reload(),5000)</script>
+      <script>setTimeout(()=>location.reload(),40000)</script>
     </body>
     `)
 })
